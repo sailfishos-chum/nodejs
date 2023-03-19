@@ -8,34 +8,34 @@
 #     use --with=bundled; will bundle deps, but do not add the suffix
 #
 # create bootstrapping build with bundled deps and extra release suffix
-%bcond_with bootstrap
-# bundle dependencies that are not available in Fedora modules
-%if %{with bootstrap}
-%bcond_without bundled
-%else
-%bcond_with bundled
-%endif
+# %bcond_with bootstrap
+# # bundle dependencies that are not available in Fedora modules
+# %if %{with bootstrap}
+# %bcond_without bundled
+# %else
+# %bcond_with bundled
+# %endif
 
-%if 0%{?rhel} && 0%{?rhel} < 9
-%bcond_without python3_fixup
-%else
-%bcond_with python3_fixup
-%endif
+# %if 0%{?rhel} && 0%{?rhel} < 9
+# %bcond_without python3_fixup
+# %else
+# %bcond_with python3_fixup
+# %endif
 
-%if 0%{?rhel} && 0%{?rhel} < 8
-%bcond_without bundled_zlib
-%else
-%bcond_with bundled_zlib
-%endif
+# %if 0%{?rhel} && 0%{?rhel} < 8
+# %bcond_without bundled_zlib
+# %else
+# %bcond_with bundled_zlib
+# %endif
 
-%bcond npm 1
+# %bcond npm 1
 
 # LTO is currently broken on Node.js builds
 %define _lto_cflags %{nil}
 
 # Heavy-handed approach to avoiding issues with python
 # bytecompiling files in the node_modules/ directory
-%global __python %{__python3}
+%global __python python3
 
 # == Master Relase ==
 # This is used by both the nodejs package and the npm subpackage that
@@ -52,7 +52,7 @@
 # than a Fedora release lifecycle.
 %global nodejs_epoch 1
 %global nodejs_major 18
-%global nodejs_minor 11
+%global nodejs_minor 15
 %global nodejs_patch 0
 %global nodejs_abi %{nodejs_major}.%{nodejs_minor}
 # nodejs_soversion - from NODE_MODULE_VERSION in src/node_version.h
@@ -69,12 +69,12 @@
 %global v8_major 10
 %global v8_minor 2
 %global v8_build 154
-%global v8_patch 15
+%global v8_patch 26
 %global v8_version %{v8_major}.%{v8_minor}.%{v8_build}.%{v8_patch}
 %global v8_release %{nodejs_epoch}.%{nodejs_major}.%{nodejs_minor}.%{nodejs_patch}.%{nodejs_release}
 
 # zlib - from deps/zlib/zlib.h
-%global zlib_version 1.2.11
+%global zlib_version 1.2.13
 
 # c-ares - from deps/cares/include/ares_version.h
 # https://github.com/nodejs/node/pull/9332
@@ -84,13 +84,13 @@
 %global llhttp_version 6.0.10
 
 # libuv - from deps/uv/include/uv/version.h
-%global libuv_version 1.43.0
+%global libuv_version 1.44.2
 
 # nghttp2 - from deps/nghttp2/lib/includes/nghttp2/nghttp2ver.h
-%global nghttp2_version 1.47.0
+%global nghttp2_version 1.51.0
 
 # ICU - from tools/icu/current_ver.dep
-%global icu_major 71
+%global icu_major 72
 %global icu_minor 1
 %global icu_version %{icu_major}.%{icu_minor}
 
@@ -100,8 +100,8 @@
 
 
 # OpenSSL minimum version
-%global openssl11_minimum 1:1.1.1
-%global openssl30_minimum 1:3.0.2
+%global openssl11_minimum 1.1.1
+%global openssl30_minimum 3.0.2
 
 # punycode - from lib/punycode.js
 # Note: this was merged into the mainline since 0.6.x
@@ -110,7 +110,7 @@
 
 # npm - from deps/npm/package.json
 %global npm_epoch 1
-%global npm_version 8.19.2
+%global npm_version 9.5.0
 
 # In order to avoid needing to keep incrementing the release version for the
 # main package forever, we will just construct one for npm that is guaranteed
@@ -119,7 +119,7 @@
 %global npm_release %{nodejs_epoch}.%{nodejs_major}.%{nodejs_minor}.%{nodejs_patch}.%{nodejs_release}
 
 # uvwasi - from deps/uvwasi/include/uvwasi.h
-%global uvwasi_version 0.0.13
+%global uvwasi_version 0.0.15
 
 # histogram_c - assumed from timestamps
 %global histogram_version 0.9.7
@@ -133,26 +133,17 @@ License: MIT and ASL 2.0 and ISC and BSD
 Group: Development/Languages
 URL: http://nodejs.org/
 
-ExclusiveArch: %{nodejs_arches}
+#ExclusiveArch: %{nodejs_arches}
 
-# nodejs bundles openssl, but we use the system version in Fedora
-# because openssl contains prohibited code, we remove openssl completely from
-# the tarball, using the script in Source100
-Source0: node-v%{nodejs_version}-stripped.tar.gz
-Source1: npmrc
-Source2: btest402.js
-# The binary data that icu-small can use to get icu-full capability
-Source3: https://github.com/unicode-org/icu/releases/download/release-%{icu_major}-%{icu_minor}/icu4c-%{icu_major}_%{icu_minor}-data-bin-b.zip
-Source4: https://github.com/unicode-org/icu/releases/download/release-%{icu_major}-%{icu_minor}/icu4c-%{icu_major}_%{icu_minor}-data-bin-l.zip
-Source100: nodejs-sources.sh
+Source0: %{name}-%{version}.tar.bz2
 
 # Disable running gyp on bundled deps we don't use
-Patch1: 0001-Disable-running-gyp-on-shared-deps.patch
+#Patch1: 0001-Disable-running-gyp-on-shared-deps.patch
 
 BuildRequires: make
-BuildRequires: python%{python3_pkgversion}-devel
-BuildRequires: python%{python3_pkgversion}-setuptools
-BuildRequires: python%{python3_pkgversion}-jinja2
+BuildRequires: python3-devel
+BuildRequires: python3-setuptools
+BuildRequires: python3-jinja2
 %if !%{with python3_fixup}
 BuildRequires: python-unversioned-command
 %endif
@@ -162,13 +153,8 @@ Provides: bundled(zlib) = %{zlib_version}
 BuildRequires: zlib-devel
 %endif
 BuildRequires: brotli-devel
-%if 0%{?rhel} && 0%{?rhel} < 8
-BuildRequires: devtoolset-11-gcc
-BuildRequires: devtoolset-11-gcc-c++
-%else
 BuildRequires: gcc >= 8.3.0
 BuildRequires: gcc-c++ >= 8.3.0
-%endif
 
 BuildRequires: jq
 
@@ -181,8 +167,8 @@ BuildRequires: nodejs-packaging
 
 BuildRequires: chrpath
 BuildRequires: libatomic
-BuildRequires: ninja-build
-BuildRequires: systemtap-sdt-devel
+BuildRequires: ninja
+#BuildRequires: systemtap-sdt-devel
 BuildRequires: unzip
 
 %if %{with bundled}
@@ -201,24 +187,10 @@ Provides: bundled(nghttp2) = %{nghttp2_version}
 Provides: bundled(llhttp) = %{llhttp_version}
 
 
-%if 0%{?rhel} && 0%{?rhel} < 8
-BuildRequires: openssl11-devel >= %{openssl11_minimum}
-Requires: openssl11 >= %{openssl11_minimum}
-%global ssl_configure --shared-openssl --shared-openssl-includes=%{_includedir}/openssl11 --shared-openssl-libpath=%{_libdir}/openssl11
-%else
-
-%if 0%{?fedora} >= 36
-BuildRequires: openssl >= %{openssl30_minimum}
-BuildRequires: openssl-devel >= %{openssl30_minimum}
-%global openssl_fips_configure --openssl-is-fips
-%else
 Requires: openssl >= %{openssl11_minimum}
 BuildRequires: openssl-devel >= %{openssl11_minimum}
 %global openssl_fips_configure %{nil}
-%endif
-
 %global ssl_configure --shared-openssl %{openssl_fips_configure}
-%endif
 
 # we need the system certificate store
 Requires: ca-certificates
@@ -237,11 +209,6 @@ Provides: nodejs(abi%{nodejs_major}) = %{nodejs_abi}
 
 # this corresponds to the "engine" requirement in package.json
 Provides: nodejs(engine) = %{nodejs_version}
-
-# Node.js currently has a conflict with the 'node' package in Fedora
-# The ham-radio group has agreed to rename their binary for us, but
-# in the meantime, we're setting an explicit Conflicts: here
-Conflicts: node <= 0.3.2-12
 
 # The punycode module was absorbed into the standard library in v0.6.
 # It still exists as a seperate package for the benefit of users of older
@@ -397,7 +364,7 @@ The API documentation for the Node.js JavaScript runtime.
 
 
 %prep
-%autosetup -p1 -n node-v%{nodejs_version}
+%autosetup -n %{name}-%{version}/upstream -p1
 
 # remove bundled dependencies that we aren't building
 %if !%{with bundled_zlib}
@@ -420,11 +387,6 @@ find . -type f -exec sed -i "s~python -c~python3 -c~" {} \;
 
 
 %build
-
-# Activate DevToolset 11 on EPEL 7
-%if 0%{?rhel} && 0%{?rhel} < 8
-. /opt/rh/devtoolset-11/enable
-%endif
 
 # When compiled on armv7hl this package generates an out of range
 # reference to the literal pool.  This is most likely a GCC issue.
