@@ -1,37 +1,18 @@
-# The following macros control the usage of dependencies bundled from upstream.
-#
-# When to use what:
-# - Regular (presumably non-modular) build: use neither (the default in Fedora)
-# - Early bootstrapping build that is not intended to be shipped:
-#     use --with=bootstrap; this will bundle deps and add `~bootstrap` release suffix
-# - Build with some dependencies not avalaible in necessary versions (i.e. module build):
-#     use --with=bundled; will bundle deps, but do not add the suffix
-#
-# create bootstrapping build with bundled deps and extra release suffix
-# %bcond_with bootstrap
-# # bundle dependencies that are not available in Fedora modules
-# %if %{with bootstrap}
-# %bcond_without bundled
-# %else
-# %bcond_with bundled
-# %endif
+%global python3_fixup 1
+%global npm 1
 
-# %if 0%{?rhel} && 0%{?rhel} < 9
-# %bcond_without python3_fixup
-# %else
-# %bcond_with python3_fixup
-# %endif
-
-# %if 0%{?rhel} && 0%{?rhel} < 8
-# %bcond_without bundled_zlib
-# %else
-# %bcond_with bundled_zlib
-# %endif
-
-# %bcond npm 1
+%global bundled_zlib 0
+%global bundled 1
+%ifarch aarch64
+%global nodejs_lto 1
+%else
+%global nodejs_lto 0
+%endif
 
 # LTO is currently broken on Node.js builds
+%if %{nodejs_lto}
 %define _lto_cflags %{nil}
+%endif
 
 # Heavy-handed approach to avoiding issues with python
 # bytecompiling files in the node_modules/ directory
@@ -41,10 +22,13 @@
 # This is used by both the nodejs package and the npm subpackage that
 # has a separate version - the name is special so that rpmdev-bumpspec
 # will bump this rather than adding .1 to the end.
-%global baserelease %autorelease
 
 %{?!_pkgdocdir:%global _pkgdocdir %{_docdir}/%{name}-%{version}}
 
+###########################################################################
+## Get versions for main package and the bundled ones at
+##  https://src.fedoraproject.org/rpms/nodejs18
+#
 # == Node.js Version ==
 # Note: Fedora should only ship LTS versions of Node.js (currently expected
 # to be major versions with even numbers). The odd-numbered versions are new
@@ -54,18 +38,29 @@
 %global nodejs_major 18
 %global nodejs_minor 15
 %global nodejs_patch 0
-%global nodejs_abi %{nodejs_major}.%{nodejs_minor}
 # nodejs_soversion - from NODE_MODULE_VERSION in src/node_version.h
 %global nodejs_soversion 108
+%global nodejs_abi %{nodejs_soversion}
 %global nodejs_version %{nodejs_major}.%{nodejs_minor}.%{nodejs_patch}
-%global nodejs_release %{baserelease}
+%global nodejs_release %{release}
+%global nodejs_envr %{nodejs_epoch}:%{nodejs_version}-%{nodejs_release}
 
-%global nodejs_datadir %{_datarootdir}/nodejs
+%global nodejs_datadir %{_datarootdir}/node-%{nodejs_major}
+
+# Determine if this should be the default version for this Fedora release
+# The default version will own /usr/bin/node and friends
+%if 0%{?fedora} == 37 || 0%{?fedora} == 38
+%global nodejs_default %{nodejs_major}
+%endif
+
+%global nodejs_default_sitelib %{_prefix}/lib/node_modules
+%global nodejs_private_sitelib %{nodejs_default_sitelib}_%{nodejs_major}
+
 
 # == Bundled Dependency Versions ==
 # v8 - from deps/v8/include/v8-version.h
 # Epoch is set to ensure clean upgrades from the old v8 package
-%global v8_epoch 2
+%global v8_epoch 3
 %global v8_major 10
 %global v8_minor 2
 %global v8_build 154
@@ -93,6 +88,7 @@
 %global icu_major 72
 %global icu_minor 1
 %global icu_version %{icu_major}.%{icu_minor}
+############################################################
 
 %global icudatadir %{nodejs_datadir}/icudata
 %{!?little_endian: %global little_endian %(%{__python3} -c "import sys;print (0 if sys.byteorder=='big' else 1)")}
@@ -127,7 +123,7 @@
 Name: nodejs
 Epoch: %{nodejs_epoch}
 Version: %{nodejs_version}
-Release: %{nodejs_release}
+Release: 1
 Summary: JavaScript runtime
 License: MIT and ASL 2.0 and ISC and BSD
 Group: Development/Languages
@@ -144,10 +140,7 @@ BuildRequires: make
 BuildRequires: python3-devel
 BuildRequires: python3-setuptools
 BuildRequires: python3-jinja2
-%if !%{with python3_fixup}
-BuildRequires: python-unversioned-command
-%endif
-%if %{with bundled_zlib}
+%if %{bundled_zlib}
 Provides: bundled(zlib) = %{zlib_version}
 %else
 BuildRequires: zlib-devel
@@ -158,11 +151,11 @@ BuildRequires: gcc-c++ >= 8.3.0
 
 BuildRequires: jq
 
-%if %{with npm}
+%if %{npm}
 # needed to generate bundled provides for npm dependencies
 # https://src.fedoraproject.org/rpms/nodejs/pull-request/2
 # https://pagure.io/nodejs-packaging/pull-request/10
-BuildRequires: nodejs-packaging
+#BuildRequires: nodejs-packaging
 %endif
 
 BuildRequires: chrpath
@@ -171,7 +164,7 @@ BuildRequires: ninja
 #BuildRequires: systemtap-sdt-devel
 BuildRequires: unzip
 
-%if %{with bundled}
+%if %{bundled}
 Provides:      bundled(libuv) = %{libuv_version}
 %else
 BuildRequires: libuv-devel >= 1:%{libuv_version}
@@ -244,9 +237,7 @@ Provides: bundled(icu) = %{icu_version}
 Provides: bundled(uvwasi) = %{uvwasi_version}
 Provides: bundled(histogram) = %{histogram_version}
 
-%if 0%{?fedora} || 0%{?rhel} >= 8
 Recommends: npm >= %{npm_epoch}:%{npm_version}-%{npm_release}
-%endif
 Conflicts: npm < %{npm_epoch}:%{npm_version}-%{npm_release}
 
 
@@ -264,13 +255,13 @@ Group: Development/Languages
 Requires: %{name}%{?_isa} = %{epoch}:%{nodejs_version}-%{nodejs_release}
 Requires: %{name}-libs%{?_isa} = %{epoch}:%{nodejs_version}-%{nodejs_release}
 Requires: openssl-devel%{?_isa}
-%if !%{with bundled_zlib}
+%if !%{bundled_zlib}
 Requires: zlib-devel%{?_isa}
 %endif
 Requires: brotli-devel%{?_isa}
 Requires: nodejs-packaging
 
-%if %{without bundled}
+%if !%{bundled}
 Requires: libuv-devel%{?_isa}
 %endif
 
@@ -322,7 +313,7 @@ Conflicts: v8-314-devel
 %description -n v8-devel
 Development headers for the v8 runtime.
 
-%if %{with npm}
+%if %{npm}
 %package -n npm
 Summary: Node.js Package Manager
 Epoch: %{npm_epoch}
@@ -376,7 +367,7 @@ rm -rf deps/v8/third_party/jinja2
 rm -rf tools/inspector_protocol/jinja2
 
 # Replace any instances of unversioned python' with python3
-%if %{with python3_fixup}
+%if %{python3_fixup}
 pathfix.py -i %{__python3} -pn $(find -type f ! -name "*.js")
 find . -type f -exec sed -i "s~/usr\/bin\/env python~/usr/bin/python3~" {} \;
 find . -type f -exec sed -i "s~/usr\/bin\/python\W~/usr/bin/python3~" {} \;
@@ -388,51 +379,53 @@ find . -type f -exec sed -i "s~python -c~python3 -c~" {} \;
 
 %build
 
-# When compiled on armv7hl this package generates an out of range
-# reference to the literal pool.  This is most likely a GCC issue.
-%ifarch armv7hl
-%define _lto_cflags %{nil}
-%endif
-
 # Decrease debuginfo verbosity to reduce memory consumption during final
 # library linking
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
 
-export CC='%{__cc}'
-export CXX='%{__cxx}'
-%if %{with python3_fixup}
+# export CC='%{__cc}'
+# export CXX='%{__cxx}'
 export NODE_GYP_FORCE_PYTHON=%{__python3}
+
+# # build with debugging symbols and add defines from libuv (#892601)
+# # Node's v8 breaks with GCC 6 because of incorrect usage of methods on
+# # NULL objects. We need to pass -fno-delete-null-pointer-checks
+# # 2022-07-14: There's a bug in either torque or gcc that causes a
+# # segmentation fault on ppc64le and s390x if compiled with -O2. Things
+# # run fine on -O1 and -O3, so we'll just go with -O3 (like upstream)
+# # while this gets sorted out.
+# extra_cflags=(
+#     -D_LARGEFILE_SOURCE
+#     -D_FILE_OFFSET_BITS=64
+#     -DZLIB_CONST
+#     -fno-delete-null-pointer-checks
+#     -O3
+# )
+# export CFLAGS="%{optflags} ${extra_cflags[*]}" CXXFLAGS="%{optflags} ${extra_cflags[*]}"
+# export LDFLAGS="%{build_ldflags}"
+
+%if !%{nodejs_lto}
+export LDFLAGS="\${LDFLAGS} -fno-lto"
 %endif
 
-# build with debugging symbols and add defines from libuv (#892601)
-# Node's v8 breaks with GCC 6 because of incorrect usage of methods on
-# NULL objects. We need to pass -fno-delete-null-pointer-checks
-# 2022-07-14: There's a bug in either torque or gcc that causes a
-# segmentation fault on ppc64le and s390x if compiled with -O2. Things
-# run fine on -O1 and -O3, so we'll just go with -O3 (like upstream)
-# while this gets sorted out.
-extra_cflags=(
-    -D_LARGEFILE_SOURCE
-    -D_FILE_OFFSET_BITS=64
-    -DZLIB_CONST
-    -fno-delete-null-pointer-checks
-    -O3
-)
-export CFLAGS="%{optflags} ${extra_cflags[*]}" CXXFLAGS="%{optflags} ${extra_cflags[*]}"
-export LDFLAGS="%{build_ldflags}"
+export CFLAGS="\${CFLAGS} -g1"
+export CXXFLAGS="\${CXXFLAGS} -g1"
+export LDFLAGS="\${LDFLAGS} -Wl,--reduce-memory-overhead"
+
 
 %{__python3} configure.py \
            --ninja \
+%if %{nodejs_lto} 
            --enable-lto \
+%endif
            --prefix=%{_prefix} \
            --shared \
            --libdir=%{_lib} \
            %{ssl_configure} \
-           %{!?with_bundled_zlib:--shared-zlib} \
+           %{!?bundled_zlib:--shared-zlib} \
            --shared-brotli \
-           %{!?with_bundled:--shared-libuv} \
-           %{?with_bundled:--without-dtrace}%{!?with_bundled:--with-dtrace} \
-           --with-intl=small-icu \
+           %{!?bundled:--shared-libuv} \
+           %{?bundled:--without-dtrace}%{!?bundled:--with-dtrace} \
            --with-icu-default-data-dir=%{icudatadir} \
            --without-corepack \
            %{!?with_npm:--without-npm} \
@@ -585,7 +578,7 @@ end
 %dir %{_datadir}/systemtap/tapset
 %{_datadir}/systemtap/tapset/node.stp
 
-%if %{without bundled}
+%if %{bundled}
 %dir %{_usr}/lib/dtrace
 %{_usr}/lib/dtrace/node.d
 %endif
@@ -644,7 +637,3 @@ end
 %if %{with npm}
 %{_pkgdocdir}/npm/docs
 %endif
-
-
-%changelog
-%autochangelog
