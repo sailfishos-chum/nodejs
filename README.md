@@ -13,7 +13,7 @@ To update:
    https://build.opensuse.org/package/show/openSUSE:Factory/nodejs18. One
    option is to use `osc`:
    ```
-   `osc -A obs co openSUSE:Factory/nodejs18`
+   osc -A obs co openSUSE:Factory/nodejs18
    ```
    with alias `obs` pointing to https://api.opensuse.org
 
